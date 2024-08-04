@@ -28,21 +28,21 @@ def check_player_with_community_cards(player, community_cards):
 
     # 获取最佳手牌的牌型和比较值
     rank_type, *rank_values = best_hand_rank
-
+        
     if rank_type in (7, 6):  # 铁支或葫芦
         # 比较玩家的两张手牌的rank是否都出现在best_hand中
         player_ranks = {card.rank for card in player.hand}
         best_hand_ranks = {card.rank for card in best_hand}
         if player_ranks <= best_hand_ranks:
-            return True
-        return False
+            return True, rank_type
+        return False, 0
     else:
         # 判断玩家的两张手牌是否都在最好的五张牌组合中
         player_hand_set = set(player.hand)
         best_hand_set = set(best_hand)
         if player_hand_set <= best_hand_set:
-            return True
-        return False
+            return True, rank_type
+        return False, 0
 
 
 def evaluate_hand(hand):
@@ -113,13 +113,9 @@ def remove_duplicates_from_nested_list(nested_list):
 
 def count_valid_hands(player1, player2, temp_deck):
     # 檢查兩個玩家的手牌是否有相同的 rank
-    player1_ranks = {card.rank for card in player1.hand}
-    player2_ranks = {card.rank for card in player2.hand}
-    if player1.hand[0].rank == player2.hand[0].rank and player1.hand[1].rank == player2.hand[1].rank:
-        print("chop")
-        return 0
-    if player1.hand[0].rank == player2.hand[1].rank and player1.hand[1].rank == player2.hand[0].rank:
-        print("chop")
+    if (player1.hand[0].rank == player2.hand[0].rank and player1.hand[1].rank == player2.hand[1].rank) or \
+       (player1.hand[0].rank == player2.hand[1].rank and player1.hand[1].rank == player2.hand[0].rank):
+        #print("chop")
         return 0
 
     count = []
@@ -146,21 +142,33 @@ def count_valid_hands(player1, player2, temp_deck):
         if len(community_hand) > 5:
             continue  # 長度大於5，跳過不需要做處理
         elif len(community_hand) == 5:
-            if check_player_with_community_cards(player1, community_hand) and check_player_with_community_cards(player2, community_hand):
+            result1, rank_type1 = check_player_with_community_cards(player1, community_hand)
+            result2, rank_type2 = check_player_with_community_cards(player2, community_hand)
+            if rank_type1 == 6 and rank_type2 == 6:
+                continue  # 两者都是葫芦，直接返回0
+            if result1 and result2:
                 count.append(community_hand)
         elif len(community_hand) == 4:
             # 長度等於4，從temp_deck中遍歷一張牌新增到possible_community_cards
             filtered_temp_deck = [card for card in temp_deck if (card.rank, card.suit) not in {(c.rank, c.suit) for c in community_hand}]
             for card in filtered_temp_deck:
                 temp_community_hand = community_hand + [card]
-                if check_player_with_community_cards(player1, temp_community_hand) and check_player_with_community_cards(player2, temp_community_hand):
+                result1, rank_type1 = check_player_with_community_cards(player1, temp_community_hand)
+                result2, rank_type2 = check_player_with_community_cards(player2, temp_community_hand)
+                if rank_type1 == 6 and rank_type2 == 6:
+                    continue  # 两者都是葫芦，直接返回0
+                if result1 and result2:
                     count.append(temp_community_hand)
         elif len(community_hand) == 3:
             # 長度等於3，從temp_deck中遍歷兩張牌新增到possible_community_cards
             filtered_temp_deck = [card for card in temp_deck if (card.rank, card.suit) not in {(c.rank, c.suit) for c in community_hand}]
             for combo in itertools.combinations(filtered_temp_deck, 2):
                 temp_community_hand = community_hand + list(combo)
-                if check_player_with_community_cards(player1, temp_community_hand) and check_player_with_community_cards(player2, temp_community_hand):
+                result1, rank_type1 = check_player_with_community_cards(player1, temp_community_hand)
+                result2, rank_type2 = check_player_with_community_cards(player2, temp_community_hand)
+                if rank_type1 == 6 and rank_type2 == 6:
+                    continue  # 两者都是葫芦，直接返回0
+                if result1 and result2:
                     count.append(temp_community_hand)
 
     # 去除count列表中的重複項
@@ -172,5 +180,5 @@ def count_valid_hands(player1, player2, temp_deck):
             seen.add(hand_key)
             unique_count.append(hand)
     #for unique in unique_count:
-    #    print(unique)
+    #   print(unique)
     return len(unique_count)
