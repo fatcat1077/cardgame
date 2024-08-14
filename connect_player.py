@@ -1,48 +1,96 @@
+import tkinter as tk
 import socket
-import pickle  # 用于序列化对象
-from card_game import Card, Player  # 导入 Card 和 Player 类
+import pickle
+from card_game import Card, Player
 
-def main():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(('127.0.0.1', 9999))
+# 初始化主视窗
+root = tk.Tk()
+root.title("扑克牌游戏")
 
-    player_id = input("Enter your player ID: ")
+# 变量
+selected_cards = []
+buttons = []
 
-    while True:
-        hand_input = input("Enter your hand (two cards, e.g., H2 D3): ")
-        # 将输入的手牌转换为 Card 对象列表
-        hand = []
-        for card_str in hand_input.split():
-            suit_char = card_str[0]  # 获取花色字符，例如 'H'
-            rank = card_str[1:]  # 获取牌面数字，例如 '2'
+# 与服务器连接
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect(('127.0.0.1', 9999))
 
-            # 将花色字符映射到花色名称
-            suits = {'H': 'Hearts', 'D': 'Diamonds', 'C': 'Clubs', 'S': 'Spades'}
-            suit = suits.get(suit_char.upper())
-            if not suit or rank not in Card.VALID_RANKS:
-                print(f"Invalid card: {card_str}. Please enter again.")
-                continue
+# 当点击牌时触发的事件
+def on_card_click(button, card):
+    if button["bg"] == "yellow":
+        button.config(bg="SystemButtonFace")  # 恢复按钮原状
+        selected_cards.remove(card)
+    elif len(selected_cards) < 2:
+        button.config(bg="yellow")  # 点击效果，改变按钮背景颜色
+        selected_cards.append(card)
+    
+    # 隐藏服务器回应的标签
+    result_label.config(text="")
 
-            # 创建 Card 对象并添加到手牌列表中
-            hand.append(Card(suit, rank))
-
-        if len(hand) != 2:
-            print("You must enter exactly two valid cards.")
-            continue
-
-        # 创建 Player 对象
-        player = Player(player_id, hand)
+# 当点击送出时触发的事件
+def on_submit():
+    if len(selected_cards) == 2:
+        player_id = player_id_entry.get()
+        if not player_id:
+            result_label.config(text="请输入 Player ID。")
+            return
+        
+        player = Player(player_id, selected_cards)
 
         # 将 Player 对象序列化并发送到服务器
         data = pickle.dumps(player)
         client.send(data)
 
-        # 接收服务器的响应
+        # 隐藏送出按钮
+        submit_button.grid_remove()
+
+        # 接收服务器的回应
         result = client.recv(1024).decode('utf-8')
-        print(f"Server response: {result}")
+        result_label.config(text=f"服务器回应: {result}")
 
-    # 关闭客户端连接
-    client.close()
+        # 重置已选择的卡片
+        for button in buttons:
+            button.config(bg="SystemButtonFace")
+        selected_cards.clear()
 
-if __name__ == "__main__":
-    main()
+        # 显示送出按钮
+        submit_button.grid(row=5, column=0, columnspan=13, pady=10)
+    else:
+        result_label.config(text="请选择两张卡片再送出。")
+
+# 创建玩家ID输入框
+tk.Label(root, text="Player ID:").grid(row=0, column=0, columnspan=2, pady=10)
+player_id_entry = tk.Entry(root)
+player_id_entry.grid(row=0, column=2, columnspan=11)
+
+# 创建扑克牌按钮
+def create_card_buttons():
+    suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
+    ranks = '23456789TJQKA'
+    row = 1
+
+    for suit in suits:
+        for i, rank in enumerate(ranks):
+            card = Card(suit, rank)
+            button = tk.Button(root, text=f"{rank} of {suit}", width=10, height=3)
+            button.config(command=lambda b=button, c=card: on_card_click(b, c))
+            buttons.append(button)
+            button.grid(row=row, column=i, padx=2, pady=2)  # 将按钮放置在指定的网格位置
+        row += 1
+
+# 创建扑克牌按钮
+create_card_buttons()
+
+# 创建送出按钮并放在第四列下方
+submit_button = tk.Button(root, text="送出", command=on_submit)
+submit_button.grid(row=5, column=0, columnspan=13, pady=10)  # 将送出按钮放置在第四列的下一列
+
+# 显示服务器回应
+result_label = tk.Label(root, text="")
+result_label.grid(row=6, column=0, columnspan=13, pady=10)
+
+# 启动主循环
+root.mainloop()
+
+# 关闭连接
+client.close()
