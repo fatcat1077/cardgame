@@ -3,18 +3,33 @@ import socket
 import pickle
 from threading import Thread
 from card_game import Card, Player
+from tkinter import simpledialog, messagebox
 
 # 初始化主视窗
 root = tk.Tk()
 root.title("期望值計算機_4人AOF")
 
-# 变量
-selected_cards = []
-buttons = []
+# 提示用户输入IP地址
+ip_address = simpledialog.askstring("输入IP地址", "请输入要连接的服务器IP地址：")
+
+# 如果用户取消输入对话框，直接退出程序
+if not ip_address:
+    messagebox.showwarning("操作取消", "未输入IP地址，程序将退出。")
+    root.destroy()
+    exit()
 
 # 与服务器连接
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(('127.0.0.1', 9999))
+try:
+    client.connect((ip_address, 9999))
+except Exception as e:
+    messagebox.showerror("连接失败", f"无法连接到服务器: {e}")
+    root.destroy()
+    exit()
+
+# 变量
+selected_cards = []
+buttons = []
 
 # 当点击牌时触发的事件
 def on_card_click(button, card):
