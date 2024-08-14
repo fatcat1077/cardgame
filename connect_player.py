@@ -1,11 +1,12 @@
 import tkinter as tk
 import socket
 import pickle
+from threading import Thread
 from card_game import Card, Player
 
 # 初始化主视窗
 root = tk.Tk()
-root.title("扑克牌游戏")
+root.title("期望值計算機_4人AOF")
 
 # 变量
 selected_cards = []
@@ -27,36 +28,47 @@ def on_card_click(button, card):
     # 隐藏服务器回应的标签
     result_label.config(text="")
 
+# 向服务器发送手牌的函数，放在一个单独的线程中
+def send_hand_to_server(player):
+    try:
+        # 将 Player 对象序列化并发送到服务器
+        data = pickle.dumps(player)
+        client.send(data)
+
+        # 显示等待消息
+        result_label.config(text="正在等待其他玩家...")
+
+        # 接收服务器的最终回应
+        result = client.recv(1024).decode('utf-8')
+        result_label.config(text=f"伺服器回應: {result}")
+    except Exception as e:
+        result_label.config(text=f"错误: {e}")
+    finally:
+        # 重置送出按钮
+        submit_button.grid(row=5, column=0, columnspan=13, pady=10)
+
 # 当点击送出时触发的事件
 def on_submit():
     if len(selected_cards) == 2:
         player_id = player_id_entry.get()
         if not player_id:
-            result_label.config(text="请输入 Player ID。")
+            result_label.config(text="請輸入 Player ID。")
             return
         
         player = Player(player_id, selected_cards)
 
-        # 将 Player 对象序列化并发送到服务器
-        data = pickle.dumps(player)
-        client.send(data)
-
         # 隐藏送出按钮
         submit_button.grid_remove()
 
-        # 接收服务器的回应
-        result = client.recv(1024).decode('utf-8')
-        result_label.config(text=f"服务器回应: {result}")
+        # 启动一个线程来发送手牌并接收服务器的回应
+        Thread(target=send_hand_to_server, args=(player,)).start()
 
         # 重置已选择的卡片
         for button in buttons:
             button.config(bg="SystemButtonFace")
         selected_cards.clear()
-
-        # 显示送出按钮
-        submit_button.grid(row=5, column=0, columnspan=13, pady=10)
     else:
-        result_label.config(text="请选择两张卡片再送出。")
+        result_label.config(text="請點選兩張手牌再送出。")
 
 # 创建玩家ID输入框
 tk.Label(root, text="Player ID:").grid(row=0, column=0, columnspan=2, pady=10)
