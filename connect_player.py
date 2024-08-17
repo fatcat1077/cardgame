@@ -5,6 +5,8 @@ from threading import Thread
 from card_game import Card, Player
 from tkinter import simpledialog, messagebox
 
+global DISCONNECT_MESSAGE 
+DISCONNECT_MESSAGE= "disconnected just now"
 # 初始化主视窗
 root = tk.Tk()
 root.title("期望值計算機_4人AOF")
@@ -55,9 +57,13 @@ def send_hand_to_server(player):
 
         # 接收服务器的最终回应
         result = client.recv(1024).decode('utf-8')
+        if DISCONNECT_MESSAGE in result:
+                print("hahaha##############")
         result_label.config(text=f"伺服器回應: {result}")
     except Exception as e:
         result_label.config(text=f"错误: {e}")
+        text="有玩家斷線請重新連線"
+        handle_disconnect(text)
     finally:
         # 重置送出按钮
         submit_button.grid(row=5, column=0, columnspan=13, pady=10)
@@ -115,6 +121,51 @@ submit_button.grid(row=5, column=0, columnspan=13, pady=10)  # 将送出按钮�
 # 显示服务器回应
 result_label = tk.Label(root, text="")
 result_label.grid(row=6, column=0, columnspan=13, pady=10)
+
+# 隐藏的手牌选择控件和提交按钮
+def hide_card_controls():
+    for button in buttons:
+        button.grid_remove()
+    submit_button.grid_remove()
+
+# 处理断线信息并显示新的窗口
+def handle_disconnect(message):
+    # 关闭当前窗口
+    root.destroy()
+    
+    # 创建一个新的窗口，显示断线信息
+    reconnect_window = tk.Tk()
+    reconnect_window.title("断线通知")
+    tk.Label(reconnect_window, text=message, padx=20, pady=20).pack()
+    tk.Button(reconnect_window, text="确定", command=reconnect_window.destroy).pack(pady=10)
+    reconnect_window.mainloop()
+# 初始化时隐藏手牌选择控件
+hide_card_controls()
+
+# 检查是否所有玩家已连接
+def check_player_ready():
+    try:
+        while True:
+            message = client.recv(1024).decode('utf-8')
+            if DISCONNECT_MESSAGE in message:
+                print("hahaha##############")
+            if message == "所有玩家已连接，开始游戏！":
+                result_label.config(text="所有玩家已连接，您可以选择手牌并提交。")
+                show_card_controls()  # 显示手牌选择控件
+                break
+            else:
+                result_label.config(text=message)
+    except Exception as e:
+        result_label.config(text=f"错误: {e}")
+
+# 显示手牌选择控件和提交按钮
+def show_card_controls():
+    for button in buttons:
+        button.grid()
+    submit_button.grid()
+
+# 启动一个线程来等待所有玩家连接
+Thread(target=check_player_ready).start()
 
 # 启动主循环
 root.mainloop()
