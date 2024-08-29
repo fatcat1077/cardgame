@@ -10,6 +10,7 @@ client_socket = None
 
 def listen_for_server_messages(client_socket):
     try:
+        enable_card_selection()
         while True:
             message = client_socket.recv(4096)
             if not message:
@@ -17,7 +18,8 @@ def listen_for_server_messages(client_socket):
 
             # 假设服务器发送的是字符串，直接显示
             display_message(message.decode('utf-8'))
-            enable_card_selection()  # 重置并允许玩家再次选择手牌
+            if message.decode('utf-8')=="all in" or message.decode('utf-8')=="fold":
+                enable_card_selection()  # 重置并允许玩家再次选择手牌
     except Exception as e:
         display_message(f"Connection error: {e}")
     finally:
@@ -89,8 +91,15 @@ def on_submit():
         client_socket.sendall(data)
         display_message(f"Player data sent: {player}")
         disable_card_selection()
+
+        # 清除已选择的手牌并恢复背景颜色
+        for suit, rank in selected_cards:
+            card_buttons[(suit, rank)].config(bg="white")  # 恢复背景颜色
+        selected_cards.clear()  # 清除选中的卡片列表
+
     except Exception as e:
         display_message(f"Failed to send player data: {e}")
+
 
 def on_close():
     if client_socket:

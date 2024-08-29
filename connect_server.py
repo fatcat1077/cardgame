@@ -43,14 +43,12 @@ def handle_client(client_socket, address):
                 else:
                     # 调用 evaluate_players 获取评估结果
                     results = evaluate_players(player_data)
-                    #測試用
-                    print(results)
+                    
                     # 根据评估结果，将对应的字符串消息发送给每个玩家
                     for p in player_data:
                         player_id = p.player_id
                         decision = results.get(player_id, False)  # 获取该玩家的布尔结果
-                        #測試用
-                        print(decision)
+                        
                         # 根据布尔值发送 "all in" 或 "fold"
                         message = "all in" if decision == True else "fold"
                         player_socket = players[player_data.index(p)]
