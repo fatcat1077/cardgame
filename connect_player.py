@@ -18,6 +18,8 @@ def listen_for_server_messages(client_socket):
 
             # 假设服务器发送的是字符串，直接显示
             display_message(message.decode('utf-8'))
+            if message.decode('utf-8')=="disconnect":
+                root.destroy()
             if message.decode('utf-8')=="all in" or message.decode('utf-8')=="fold":
                 enable_card_selection()  # 重置并允许玩家再次选择手牌
     except Exception as e:
@@ -61,6 +63,7 @@ def display_message(message):
     message_label.config(text=message)
 
 def on_card_click(suit, rank, button):
+
     card = (suit, rank)
     if card in selected_cards:
         selected_cards.remove(card)

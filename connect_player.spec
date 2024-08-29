@@ -3,7 +3,7 @@
 
 a = Analysis(
     ['connect_player.py'],
-    pathex=['card'],
+    pathex=[],
     binaries=[],
     datas=[],
     hiddenimports=[],
