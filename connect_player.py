@@ -1,174 +1,160 @@
-import tkinter as tk
 import socket
+import threading
+import tkinter as tk
+from tkinter import simpledialog
+from PIL import Image, ImageTk
 import pickle
-from threading import Thread
-from card_game import Card, Player
-from tkinter import simpledialog, messagebox
+from card_game import Player, Card
 
-global DISCONNECT_MESSAGE 
-DISCONNECT_MESSAGE= "disconnected just now"
-# 初始化主视窗
-root = tk.Tk()
-root.title("期望值計算機_4人AOF")
+client_socket = None
 
-# 提示用户输入IP地址
-ip_address = simpledialog.askstring("输入IP地址", "请输入要连接的服务器IP地址：")
-
-# 如果用户取消输入对话框，直接退出程序
-if not ip_address:
-    messagebox.showwarning("操作取消", "未输入IP地址，程序将退出。")
-    root.destroy()
-    exit()
-
-# 与服务器连接
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-try:
-    client.connect((ip_address, 9999))
-except Exception as e:
-    messagebox.showerror("连接失败", f"无法连接到服务器: {e}")
-    root.destroy()
-    exit()
-
-# 变量
-selected_cards = []
-buttons = []
-
-# 当点击牌时触发的事件
-def on_card_click(button, card):
-    if button["bg"] == "yellow":
-        button.config(bg="SystemButtonFace")  # 恢复按钮原状
-        selected_cards.remove(card)
-    elif len(selected_cards) < 2:
-        button.config(bg="yellow")  # 点击效果，改变按钮背景颜色
-        selected_cards.append(card)
-    
-    # 隐藏服务器回应的标签
-    result_label.config(text="")
-
-# 向服务器发送手牌的函数，放在一个单独的线程中
-def send_hand_to_server(player):
-    try:
-        # 将 Player 对象序列化并发送到服务器
-        data = pickle.dumps(player)
-        client.send(data)
-
-        # 显示等待消息
-        result_label.config(text="正在等待其他玩家...")
-
-        # 接收服务器的最终回应
-        result = client.recv(1024).decode('utf-8')
-        if DISCONNECT_MESSAGE in result:
-                print("hahaha##############")
-        result_label.config(text=f"伺服器回應: {result}")
-    except Exception as e:
-        result_label.config(text=f"错误: {e}")
-        text="有玩家斷線請重新連線"
-        handle_disconnect(text)
-    finally:
-        # 重置送出按钮
-        submit_button.grid(row=5, column=0, columnspan=13, pady=10)
-
-# 当点击送出时触发的事件
-def on_submit():
-    if len(selected_cards) == 2:
-        player_id = player_id_entry.get()
-        if not player_id:
-            result_label.config(text="請輸入 Player ID。")
-            return
-        
-        player = Player(player_id, selected_cards)
-
-        # 隐藏送出按钮
-        submit_button.grid_remove()
-
-        # 启动一个线程来发送手牌并接收服务器的回应
-        Thread(target=send_hand_to_server, args=(player,)).start()
-
-        # 重置已选择的卡片
-        for button in buttons:
-            button.config(bg="SystemButtonFace")
-        selected_cards.clear()
-    else:
-        result_label.config(text="請點選兩張手牌再送出。")
-
-# 创建玩家ID输入框
-tk.Label(root, text="Player ID:").grid(row=0, column=0, columnspan=2, pady=10)
-player_id_entry = tk.Entry(root)
-player_id_entry.grid(row=0, column=2, columnspan=11)
-
-# 创建扑克牌按钮
-def create_card_buttons():
-    suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
-    ranks = '23456789TJQKA'
-    row = 1
-
-    for suit in suits:
-        for i, rank in enumerate(ranks):
-            card = Card(suit, rank)
-            button = tk.Button(root, text=f"{rank} of {suit}", width=10, height=3)
-            button.config(command=lambda b=button, c=card: on_card_click(b, c))
-            buttons.append(button)
-            button.grid(row=row, column=i, padx=2, pady=2)  # 将按钮放置在指定的网格位置
-        row += 1
-
-# 创建扑克牌按钮
-create_card_buttons()
-
-# 创建送出按钮并放在第四列下方
-submit_button = tk.Button(root, text="送出", command=on_submit)
-submit_button.grid(row=5, column=0, columnspan=13, pady=10)  # 将送出按钮放置在第四列的下一列
-
-# 显示服务器回应
-result_label = tk.Label(root, text="")
-result_label.grid(row=6, column=0, columnspan=13, pady=10)
-
-# 隐藏的手牌选择控件和提交按钮
-def hide_card_controls():
-    for button in buttons:
-        button.grid_remove()
-    submit_button.grid_remove()
-
-# 处理断线信息并显示新的窗口
-def handle_disconnect(message):
-    # 关闭当前窗口
-    root.destroy()
-    
-    # 创建一个新的窗口，显示断线信息
-    reconnect_window = tk.Tk()
-    reconnect_window.title("断线通知")
-    tk.Label(reconnect_window, text=message, padx=20, pady=20).pack()
-    tk.Button(reconnect_window, text="确定", command=reconnect_window.destroy).pack(pady=10)
-    reconnect_window.mainloop()
-# 初始化时隐藏手牌选择控件
-hide_card_controls()
-
-# 检查是否所有玩家已连接
-def check_player_ready():
+def listen_for_server_messages(client_socket):
     try:
         while True:
-            message = client.recv(1024).decode('utf-8')
-            if DISCONNECT_MESSAGE in message:
-                print("hahaha##############")
-            if message == "所有玩家已连接，开始游戏！":
-                result_label.config(text="所有玩家已连接，您可以选择手牌并提交。")
-                show_card_controls()  # 显示手牌选择控件
+            message = client_socket.recv(4096)
+            if not message:
                 break
-            else:
-                result_label.config(text=message)
+
+            # 假设服务器发送的是字符串，直接显示
+            display_message(message.decode('utf-8'))
+            enable_card_selection()  # 重置并允许玩家再次选择手牌
     except Exception as e:
-        result_label.config(text=f"错误: {e}")
+        display_message(f"Connection error: {e}")
+    finally:
+        client_socket.close()
 
-# 显示手牌选择控件和提交按钮
-def show_card_controls():
-    for button in buttons:
-        button.grid()
-    submit_button.grid()
+def connect_to_server():
+    global client_socket
 
-# 启动一个线程来等待所有玩家连接
-Thread(target=check_player_ready).start()
+    if client_socket is not None:
+        display_message("Already connected to server.")
+        return
+
+    ip_address = simpledialog.askstring("Input", "Enter Server IP Address:", parent=root)
+    if not ip_address:
+        return
+
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((ip_address, 9999))
+
+        listen_thread = threading.Thread(target=listen_for_server_messages, args=(client_socket,))
+        listen_thread.daemon = True
+        listen_thread.start()
+    except Exception as e:
+        display_message(f"Failed to connect to server: {e}")
+        client_socket = None
+
+def enable_card_selection():
+    submit_button.config(state=tk.NORMAL)
+    for button in card_buttons.values():
+        button.config(state=tk.NORMAL)
+
+def disable_card_selection():
+    submit_button.config(state=tk.DISABLED)
+    for button in card_buttons.values():
+        button.config(state=tk.DISABLED)
+
+def display_message(message):
+    message_label.config(text=message)
+
+def on_card_click(suit, rank, button):
+    card = (suit, rank)
+    if card in selected_cards:
+        selected_cards.remove(card)
+        button.config(bg="white")
+        display_message(f"Deselected: {suit} {rank}")
+    elif len(selected_cards) < 2:
+        selected_cards.append(card)
+        button.config(bg="blue")
+        display_message(f"Selected: {suit} {rank}")
+    else:
+        display_message("Already selected two cards.")
+
+def on_submit():
+    if len(selected_cards) != 2:
+        display_message("Please select exactly two cards.")
+        return
+
+    player_id = player_id_entry.get()
+    if not player_id:
+        display_message("Please enter a Player ID.")
+        return
+
+    hand = [Card(suit, rank) for suit, rank in selected_cards]
+    player = Player(player_id, hand)
+    
+    data = pickle.dumps(player)
+    try:
+        client_socket.sendall(data)
+        display_message(f"Player data sent: {player}")
+        disable_card_selection()
+    except Exception as e:
+        display_message(f"Failed to send player data: {e}")
+
+def on_close():
+    if client_socket:
+        try:
+            client_socket.close()
+        except:
+            pass
+    root.destroy()
+
+# 创建主窗口
+root = tk.Tk()
+root.title("Card Game Interface")
+root.geometry("800x600")
+
+root.protocol("WM_DELETE_WINDOW", on_close)  # 窗口关闭时执行
+
+# 字典用来保存加载的图片对象以防止被垃圾回收
+card_images = {}
+
+# 列表保存用户选中的两张卡片
+selected_cards = []
+
+# 创建PlayerID的标签和输入框
+player_id_label = tk.Label(root, text="Player ID:")
+player_id_label.grid(row=0, column=0, columnspan=2)
+player_id_entry = tk.Entry(root)
+player_id_entry.grid(row=0, column=2, columnspan=2)
+
+# 用于显示消息的标签
+message_label = tk.Label(root, text="")
+message_label.grid(row=1, column=0, columnspan=13, pady=10)
+
+# 创建卡片按钮
+suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
+ranks = '23456789TJQKA'
+card_buttons = {}
+
+# 创建卡片按钮
+for i, suit in enumerate(suits):
+    for j, rank in enumerate(ranks):
+        image_path = f"images/{suit}_{rank}.png"
+        try:
+            image = Image.open(image_path)
+            image = image.resize((80, 120), Image.LANCZOS)
+            card_image = ImageTk.PhotoImage(image)
+            card_images[(suit, rank)] = card_image
+            
+            # 创建按钮，初始没有加深的边框
+            card_button = tk.Button(root, image=card_images[(suit, rank)],
+                                    highlightbackground="black", highlightthickness=0)
+            
+            # 绑定事件时捕获card_button
+            card_button.config(command=lambda s=suit, r=rank, b=card_button: on_card_click(s, r, b))
+            
+            card_button.grid(row=i + 2, column=j, padx=2, pady=2)
+            card_buttons[(suit, rank)] = card_button  # 将按钮保存到字典中
+        except Exception as e:
+            display_message(f"Error loading image {image_path}: {e}")
+
+# 创建送出按钮
+submit_button = tk.Button(root, text="送出", command=on_submit)
+submit_button.grid(row=len(suits) + 3, column=0, columnspan=len(ranks), pady=10)
+disable_card_selection()  # 默认禁用手牌选择，直到游戏开始
 
 # 启动主循环
+connect_to_server()  # 启动时连接服务器
 root.mainloop()
-
-# 关闭连接
-client.close()

@@ -1,131 +1,85 @@
-import socketserver
+import socket
 import threading
-import pickle  # 用于反序列化对象
-from card_game import Player  # 导入 Player 类
-from expect_value_calculator import evaluate_players  # 导入计算函数 evaluate_players
+from card_game import Player
+import pickle
+from expect_value_calculator import evaluate_players
 
-# 用来存储所有玩家的 Player 对象
+# 全局变量
 players = []
-player_sockets = {}
+player_data = []
 lock = threading.Lock()
-connected_players = 0  # 计数连接的玩家数量
 
-class PlayerHandler(socketserver.BaseRequestHandler):
-    def handle(self):
-        global players, player_sockets, connected_players
+def handle_client(client_socket, address):
+    global players, player_data
+    print(f"Player connected from {address}")
 
+    with lock:
+        if len(players) >= 4:
+            client_socket.sendall("Game already started. Connection refused.".encode('utf-8'))
+            client_socket.close()
+            return
+
+        players.append(client_socket)
+        if len(players) < 4:
+            client_socket.sendall("Waiting for other players to connect.".encode('utf-8'))
+        else:
+            for player_socket in players:
+                player_socket.sendall("Game starting!".encode('utf-8'))
+
+    while True:
         try:
+            data = client_socket.recv(4096)
+            if not data:
+                break
+
+            player = pickle.loads(data)
+            print(f"Received player data: {player}")
+
             with lock:
-                connected_players += 1  # 增加连接玩家计数
-                player_sockets[self.request] = None  # 记录当前连接的socket
+                player_data.append(player)
 
-                # 通知玩家等待其他玩家加入
-                self.request.sendall(f"已连接到服务器，等待其他玩家加入...".encode('utf-8'))
+                if len(player_data) < 4:
+                    client_socket.sendall("Waiting for other players to choose cards.".encode('utf-8'))
+                else:
+                    # 调用 evaluate_players 获取评估结果
+                    results = evaluate_players(player_data)
+                    #測試用
+                    print(results)
+                    # 根据评估结果，将对应的字符串消息发送给每个玩家
+                    for p in player_data:
+                        player_id = p.player_id
+                        decision = results.get(player_id, False)  # 获取该玩家的布尔结果
+                        #測試用
+                        print(decision)
+                        # 根据布尔值发送 "all in" 或 "fold"
+                        message = "all in" if decision == True else "fold"
+                        player_socket = players[player_data.index(p)]
+                        player_socket.sendall(message.encode('utf-8'))
 
-                # 如果已经有四个玩家连接，通知所有玩家开始游戏
-                if connected_players == 4:
-                    print(player_sockets.keys())
-                    for sock in player_sockets.keys():
-                        sock.sendall("所有玩家已连接，开始游戏！".encode('utf-8'))
-
-            while True:
-                # 接收数据
-                data = self.request.recv(4096)  # 调整缓冲区大小以适应较大的对象
-                if not data:
-                    raise ConnectionResetError("玩家断开连接")
-
-                # 反序列化 Player 对象
-                try:
-                    player = pickle.loads(data)
-                    print(f"Received {player} from {self.client_address}")
-
-                    # 验证玩家数据是否符合预期
-                    if not isinstance(player, Player) or not player.hand:
-                        raise ValueError("Invalid player data")
-
-                except (pickle.PickleError, ValueError) as e:
-                    print(f"Data error from {self.client_address}: {e}")
-                    # 发送错误消息并要求玩家重新输入
-                    self.request.sendall("数据错误，请重新发送。".encode('utf-8'))
-                    continue
-
-                with lock:
-                    players.append(player)
-                    player_sockets[self.request] = player
-
-                    # 如果已经接收到四个玩家的卡牌
-                    if len(players) == 4:
-                        # 评估所有玩家
-                        results = evaluate_players(players)
-                        
-                        # 根据评估结果发送响应
-                        for sock, player in player_sockets.items():
-                            if player is not None:
-                                response = "all in" if results[player.player_id] else "fold"
-                                sock.sendall(response.encode('utf-8'))
-
-                        # 清空玩家列表和连接，以便进行下一轮
-                        players.clear()
-                        for sock in player_sockets.keys():
-                            player_sockets[sock] = None
-
-        except ConnectionResetError as e:
-            print(f"Player {self.client_address} disconnected. Error: {e}")
-            self.handle_player_disconnect()
+                    # 重置状态准备下一轮
+                    player_data.clear()
 
         except Exception as e:
-            print(f"Player {self.client_address} disconnected. Error: {e}")
-            self.handle_player_disconnect()
+            print(f"Error: {e}")
+            break
 
-        finally:
-            with lock:
-                if self.request in player_sockets:
-                    del player_sockets[self.request]
+    with lock:
+        if client_socket in players:
+            players.remove(client_socket)
+        print(f"Player disconnected from {address}")
 
-    def handle_player_disconnect(self):
-        """
-        处理玩家断线的情况，通知其他玩家并重置游戏状态。
-        """
-        global players, player_sockets, connected_players
-        with lock:
-            print(self.request in player_sockets and player_sockets[self.request])
-            if self.request in player_sockets and player_sockets[self.request]:
-                disconnected_player_id = player_sockets[self.request].player_id
-                # 通知其他玩家有玩家断线
-                for sock in player_sockets.keys():
-                    #現在跑不進來
-                    if sock != self.request and player_sockets[sock] is not None:
-                        try:
-                            #現在跑不進來
-                            sock.sendall(f"Player ID {disconnected_player_id} disconnected just now. Please reconnect again".encode('utf-8'))
-                        except Exception as e:
-                            print(f"Failed to send disconnect message: {e}")
+    client_socket.close()
 
-            # 断开所有连接并重置状态
-            for sock in list(player_sockets.keys()):
-                try:
-                    sock.close()
-                except Exception as e:
-                    print(f"Failed to close socket: {e}")
+def start_server():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("0.0.0.0", 9999))
+    server.listen(4)
+    print("Server started, waiting for players...")
 
-            # 重置所有变量
-            players.clear()
-            player_sockets.clear()
-            connected_players = 0  # 确保玩家计数被正确重置
-
-class PlayerServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    allow_reuse_address = True
+    while True:
+        client_socket, addr = server.accept()
+        client_thread = threading.Thread(target=handle_client, args=(client_socket, addr))
+        client_thread.start()
 
 if __name__ == "__main__":
-    HOST, PORT = '0.0.0.0', 9999
-
-    with PlayerServer((HOST, PORT), PlayerHandler) as server:
-        print(f"Server listening on port {PORT}")
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("Keyboard interrupt received, shutting down server...")
-        finally:
-            server.server_close()
-            print("Server closed.")
-
+    start_server()

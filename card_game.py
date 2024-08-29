@@ -23,6 +23,8 @@ class Player:
         self.hand = hand
         self.possible_hands = []  # 初始化為空列表
         self.initialize_possible_hands()
+        self.connection=True
+        self.client_message=""
 
     def __repr__(self):
         return f"Player {self.player_id} with hand {self.hand}"
